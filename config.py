@@ -1,53 +1,38 @@
 import os
-from dotenv import load_dotenv
 
-# بارگذاری متغیرهای محیطی
-load_dotenv()
+# تنظیمات مالک ربات
+OWNER_ID = 8588773170
+BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+CHANNEL_ID = os.environ.get('CHANNEL_ID', '@your_channel_username')
 
-class Config:
-    # اطلاعات مالک
-    OWNER_ID = int(os.getenv('OWNER_ID', '8588773170'))
-    OWNER_USERNAME = os.getenv('OWNER_USERNAME', '@amele55')
-    
-    # توکن بات تلگرام
-    BOT_TOKEN = os.getenv('BOT_TOKEN', '')
-    
-    # کانال‌های رسمی
-    NEWS_CHANNEL = os.getenv('NEWS_CHANNEL', 'https://t.me/Aryaboom_News')
-    GUIDE_CHANNEL = os.getenv('GUIDE_CHANNEL', 'https://t.me/Aryaboom_Guide')
-    COMMUNITY_CHANNEL = os.getenv('COMMUNITY_CHANNEL', 'https://t.me/Aryaboom_Community')
-    CHANNEL_ID = os.getenv('CHANNEL_ID', '')
-    
-    # Webhook برای Render
-    WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
-    PORT = int(os.getenv('PORT', '10000'))
-    
-    # تنظیمات بازی
-    MAX_PLAYERS = 12
-    INITIAL_RESOURCES = {
-        'gold': 1000,
-        'iron': 500,
-        'stone': 300,
-        'food': 800,
-        'army': 100,
-        'defense': 50
-    }
-    
-    # هزینه‌ها
-    COSTS = {
-        'train_soldier': {'gold': 10, 'iron': 5},
-        'upgrade_defense': {'gold': 15, 'stone': 10},
-        'collect_resources': {'army': 5}
-    }
-    
-    # پاداش‌ها
-    REWARDS = {
-        'daily_login': {'gold': 50, 'food': 30},
-        'victory': {'gold': 100, 'iron': 50},
-        'capture': {'gold': 200, 'food': 100}
-    }
+# تنظیمات دیتابیس
+DATABASE_PATH = os.environ.get('DATABASE_PATH', 'game.db')
 
-# متغیرهای global برای سازگاری
-BOT_TOKEN = Config.BOT_TOKEN
-OWNER_ID = Config.OWNER_ID
-CHANNEL_ID = Config.CHANNEL_ID
+# لیست کشورهای باستانی
+ANCIENT_COUNTRIES = [
+    {'id': 1, 'name': 'پارس', 'special_resource': 'اسب', 'color': '#FFD700'},
+    {'id': 2, 'name': 'روم', 'special_resource': 'آهن', 'color': '#C0C0C0'},
+    {'id': 3, 'name': 'مصر', 'special_resource': 'طلا', 'color': '#FFFF00'},
+    {'id': 4, 'name': 'چین', 'special_resource': 'غذا', 'color': '#FF0000'},
+    {'id': 5, 'name': 'یونان', 'special_resource': 'سنگ', 'color': '#0000FF'},
+    {'id': 6, 'name': 'بابل', 'special_resource': 'دانش', 'color': '#800080'},
+    {'id': 7, 'name': 'آشور', 'special_resource': 'نفت', 'color': '#A52A2A'},
+    {'id': 8, 'name': 'کارتاژ', 'special_resource': 'کشتی', 'color': '#008000'},
+    {'id': 9, 'name': 'هند', 'special_resource': 'ادویه', 'color': '#FFA500'},
+    {'id': 10, 'name': 'مقدونیه', 'special_resource': 'فیل', 'color': '#808080'},
+]
+
+# تنظیمات منابع اولیه
+BASE_RESOURCES = {
+    'gold': 100,
+    'iron': 100,
+    'stone': 100,
+    'food': 100
+}
+
+# تنظیمات فصل
+SEASON_DURATION = 7  # روز
+
+# تنظیمات سرور
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+PORT = int(os.environ.get('PORT', 5000))
