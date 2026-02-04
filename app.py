@@ -6,7 +6,46 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+# در ابتدای فایل بعد از imports
+print("=" * 50)
+print("🤖 Ancient War Bot Starting...")
+print(f"✅ BOT_TOKEN exists: {bool(os.environ.get('BOT_TOKEN'))}")
+print(f"✅ OWNER_ID: {os.environ.get('OWNER_ID')}")
+print("=" * 50)
 
+# در تابع send_welcome، لاگ اضافه کنید
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    """هندلر دستور start"""
+    print(f"📨 Received /start from user_id: {message.from_user.id}")
+    user_id = message.from_user.id
+    username = message.from_user.username or message.from_user.first_name
+    
+    # ثبت/به‌روزرسانی کاربر
+    execute_query('''
+        INSERT INTO players (user_id, username, join_date, last_active)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+        username = excluded.username,
+        last_active = excluded.last_active
+    ''', (user_id, username, datetime.now(), datetime.now()), commit=True)
+    
+    welcome_text = f"""👋 سلام {message.from_user.first_name}!
+
+🎮 **به بازی جنگ جهانی باستان خوش آمدید!**"""
+    
+    print(f"📤 Sending welcome message to {user_id}")
+    
+    try:
+        bot.send_message(
+            message.chat.id,
+            welcome_text,
+            reply_markup=main_menu(user_id),
+            parse_mode='Markdown'
+        )
+        print(f"✅ Message sent successfully to {user_id}")
+    except Exception as e:
+        print(f"❌ Error sending message: {e}")
 # ========== تنظیمات از Environment Variables ==========
 TOKEN = os.environ.get('BOT_TOKEN', '')
 OWNER_ID = int(os.environ.get('OWNER_ID', '8588773170'))
