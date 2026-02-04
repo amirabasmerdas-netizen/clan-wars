@@ -377,42 +377,89 @@ def mines_menu():
     return keyboard
 
 # ========== هندلرهای اصلی ==========
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    """هندلر دستور start"""
+@bot.message_handler(commands=['start'])
+def start_handler(message):
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
-    
-    # ثبت/به‌روزرسانی کاربر
-    execute_query('''
-        INSERT INTO players (user_id, username, join_date, last_active)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-        username = excluded.username,
-        last_active = excluded.last_active
-    ''', (user_id, username, datetime.now(), datetime.now()), commit=True)
-    
-    welcome_text = f"""👋 سلام {message.from_user.first_name}!
+    now = datetime.now()
 
-🎮 **به بازی جنگ جهانی باستان خوش آمدید!**
+    # بررسی وجود کاربر
+    exists = execute_query(
+        "SELECT country FROM players WHERE user_id = ?",
+        (user_id,),
+        fetchone=True
+    )
 
-🏛️ یک کشور باستانی را اداره کنید
-⚔️ ارتش‌های متنوع بسازید
-🤝 با دیگران دیپلماسی کنید
-⛏️ معادن را توسعه دهید
-🏆 بر جهان باستان مسلط شوید
+    if not exists:
+        # ثبت‌نام اولیه
+        execute_query(
+            '''
+            INSERT INTO players (user_id, username, join_date, last_active)
+            VALUES (?, ?, ?, ?)
+            ''',
+            (user_id, username, now, now),
+            commit=True
+        )
+        is_new = True
+        country = None
+    else:
+        # آپدیت فعالیت
+        execute_query(
+            '''
+            UPDATE players
+            SET username = ?, last_active = ?
+            WHERE user_id = ?
+            ''',
+            (username, now, user_id),
+            commit=True
+        )
+        is_new = False
+        country = exists[0]
 
-🔧 **ورژن:** 3.0
-👨‍💻 **سازنده:** @amele55
-🌐 **میزبان:** Render
+    # متن خوش‌آمدگویی
+    if is_new:
+        text = f"""
+👋 سلام {message.from_user.first_name}!
 
-برای شروع از منوی زیر انتخاب کنید:"""
-    
+🎮 **به بازی جنگ جهانی باستان خوش آمدید**
+
+🏛️ شما هنوز کشوری ندارید  
+📩 از مالک بازی درخواست کشور کنید
+
+⚔️ بعد از دریافت کشور:
+• ارتش می‌سازی
+• منابع جمع می‌کنی
+• حمله می‌کنی
+• دیپلماسی می‌کنی
+
+👇 از منوی زیر شروع کن
+"""
+    else:
+        if country:
+            text = f"""
+👋 خوش برگشتی {message.from_user.first_name}!
+
+🏛️ کشور شما: **{country}**
+⚔️ ارتشت آماده فرمانه
+⛏️ معادنت در حال تولیدن
+
+👇 ادامه بازی:
+"""
+        else:
+            text = f"""
+👋 خوش برگشتی {message.from_user.first_name}
+
+⚠️ هنوز کشوری بهت اختصاص داده نشده  
+📩 از مالک بازی درخواست بده
+
+👇 منو:
+"""
+
     bot.send_message(
-        message.chat.id,
-        welcome_text,
-        reply_markup=main_menu(user_id),
-        parse_mode='Markdown'
+        chat_id=message.chat.id,
+        text=text,
+        parse_mode="Markdown",
+        reply_markup=main_menu(user_id)
     )
 
 @bot.message_handler(commands=['status'])
