@@ -10,6 +10,7 @@ class Database:
     def __init__(self):
         self.config = Config()
         self.conn = sqlite3.connect('aryaboom.db', check_same_thread=False)
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row  # بازگرداندن دیکشنری
         self.init_db()
     
@@ -366,3 +367,4 @@ class Database:
             ORDER BY power_level DESC
         ''')
         return cursor.fetchall()
+
