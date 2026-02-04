@@ -3,16 +3,17 @@
 """
 Aryaboom Bot - Clan Warfare Telegram Game
 مالک: @amele55 | ایدی: 8588773170
-نسخه Webhook برای Render
+نسخه سازگار با python-telegram-bot==13.15
 """
 
 import os
 import logging
 import asyncio
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
+    Updater, Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, Filters, CallbackContext, ConversationHandler
 )
 
 # Import internal modules
@@ -36,7 +37,7 @@ class AryaboomBot:
         self.clan_manager = ClanManager()
         self.application = None
     
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def start(self, update: Update, context: CallbackContext):
         """دستور /start - صفحه اصلی بازی"""
         user_id = update.effective_user.id
         
@@ -82,7 +83,7 @@ class AryaboomBot:
             parse_mode='HTML'
         )
     
-    async def admin_add_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def admin_add_user(self, update: Update, context: CallbackContext):
         """افزودن کاربر جدید توسط مالک"""
         user_id = update.effective_user.id
         
@@ -94,14 +95,13 @@ class AryaboomBot:
         keyboard = self.keyboards.clan_selection_keyboard()
         await update.message.reply_text(
             "🤴 <b>افزودن کاربر جدید</b>\n\n"
-            "لیست قبایل موجود را انتخاب کن:\n"
-            "(هر قبیله فقط می‌تواند یک کاربر داشته باشد)",
+            "لیست قبایل موجود را انتخاب کن:",
             reply_markup=keyboard,
             parse_mode='HTML'
         )
         return "SELECT_CLAN"
     
-    async def handle_clan_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_clan_selection(self, update: Update, context: CallbackContext):
         """انتخاب قبیله توسط مالک"""
         query = update.callback_query
         await query.answer()
@@ -120,10 +120,7 @@ class AryaboomBot:
             await query.edit_message_text(
                 f"{clan_emoji} قبیله انتخاب شده: <b>{clan_name}</b>\n\n"
                 "📝 لطفاً <b>ایدی عددی</b> کاربر را وارد کن:\n\n"
-                "<i>برای گرفتن ایدی عددی:</i>\n"
-                "1. به @userinfobot برو\n"
-                "2. دستور /start را بزن\n"
-                "3. ایدی عددی را کپی کن\n\n"
+                "<i>برای گرفتن ایدی عددی به @userinfobot مراجعه کن</i>\n\n"
                 "یا دستور /cancel را برای لغو بزن",
                 parse_mode='HTML'
             )
@@ -133,7 +130,7 @@ class AryaboomBot:
             await query.edit_message_text("❌ خطا در انتخاب قبیله.")
             return ConversationHandler.END
     
-    async def handle_user_id_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_user_id_input(self, update: Update, context: CallbackContext):
         """دریافت ایدی کاربر از مالک"""
         user_id_input = update.message.text
         
@@ -143,8 +140,7 @@ class AryaboomBot:
         
         if not user_id_input.isdigit():
             await update.message.reply_text(
-                "❌ ایدی باید عددی باشد!\n"
-                "لطفاً دوباره وارد کن یا /cancel بزن:",
+                "❌ ایدی باید عددی باشد!\nلطفاً دوباره وارد کن یا /cancel بزن:",
                 parse_mode='HTML'
             )
             return "ENTER_USER_ID"
@@ -172,13 +168,9 @@ class AryaboomBot:
 👑 <b>لقب شما:</b> {clan_title}
 🎮 <b>کد دعوت شما:</b> <code>{result['invite_code']}</code>
 
-📚 <b>برای شروع بازی:</b>
-1. دستور /start را بزن
-2. آموزش مقدماتی را بخوان
-3. قلمرو خودت را توسعه بده
+برای شروع بازی دستور /start را بزن.
 
-⚠️ <b>توجه مهم:</b>
-برای ادامه بازی و دریافت اخبار باید در کانال‌های زیر عضو شوی:
+⚠️ <b>توجه:</b> برای ادامه بازی در کانال‌های زیر عضو شو:
                 """
                 
                 await context.bot.send_message(
@@ -199,22 +191,21 @@ class AryaboomBot:
                 f"🏛 قبیله: {result['clan_name']}\n"
                 f"🆔 ایدی کاربر: <code>{new_user_id}</code>\n"
                 f"🎮 کد دعوت: <code>{result['invite_code']}</code>\n\n"
-                f"📊 <b>آمار جدید:</b>\n"
+                f"📊 آمار جدید:\n"
                 f"👥 کاربران کل: {stats['active_users']}\n"
-                f"🏛 قبایل پر: {stats['occupied_clans']}/12\n"
-                f"🤖 قبایل AI: {stats['ai_clans']}",
+                f"🏛 قبایل پر: {stats['occupied_clans']}/12",
                 reply_markup=keyboard,
                 parse_mode='HTML'
             )
         else:
             await update.message.reply_text(
-                f"❌ <b>خطا در ثبت کاربر:</b>\n{result['message']}",
+                f"❌ <b>خطا:</b>\n{result['message']}",
                 parse_mode='HTML'
             )
         
         return ConversationHandler.END
     
-    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_callback(self, update: Update, context: CallbackContext):
         """مدیریت کلیک روی دکمه‌های اینلاین"""
         query = update.callback_query
         await query.answer()
@@ -234,176 +225,36 @@ class AryaboomBot:
         
         if data == "news_channel":
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 عضویت در کانال اخبار", url=self.config.NEWS_CHANNEL)],
-                [InlineKeyboardButton("📖 عضویت در کانال راهنما", url=self.config.GUIDE_CHANNEL)],
-                [InlineKeyboardButton("👥 عضویت در کانال جامعه", url=self.config.COMMUNITY_CHANNEL)],
-                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back_to_main")]
+                [InlineKeyboardButton("📢 کانال اخبار", url=self.config.NEWS_CHANNEL)],
+                [InlineKeyboardButton("📖 کانال راهنما", url=self.config.GUIDE_CHANNEL)],
+                [InlineKeyboardButton("👥 کانال جامعه", url=self.config.COMMUNITY_CHANNEL)],
+                [InlineKeyboardButton("🏠 بازگشت", callback_data="back_to_main")]
             ])
             
             await query.edit_message_text(
                 "📢 <b>کانال‌های رسمی آریابوم</b>\n\n"
-                "برای دریافت آخرین اخبار، راهنما و ارتباط با جامعه بازی:\n\n"
-                "1️⃣ <b>کانال اخبار:</b> اطلاعیه‌ها، رویدادها، مسابقات\n"
-                "2️⃣ <b>کانال راهنما:</b> آموزش کامل بازی، استراتژی‌ها\n"
-                "3️⃣ <b>کانال جامعه:</b> گفتگو با بازیکنان دیگر\n\n"
-                "⚠️ عضویت در این کانال‌ها برای ادامه بازی ضروری است.",
+                "برای عضویت روی دکمه‌ها کلیک کن:",
                 reply_markup=keyboard,
                 parse_mode='HTML'
             )
         
         elif data == "guide":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 راهنمای کامل بازی", url=self.config.GUIDE_CHANNEL)],
-                [InlineKeyboardButton("🎮 شروع آموزش", callback_data="tutorial")],
-                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back_to_main")]
-            ])
-            
             await query.edit_message_text(
-                "📖 <b>راهنمای بازی آریابوم</b>\n\n"
-                "برای یادگیری کامل بازی و استراتژی‌های مختلف:\n\n"
-                "• آموزش مقدماتی\n"
-                "• راهنمای هر قبیله\n"
-                "• تاکتیک‌های جنگی\n"
-                "• مدیریت اقتصاد\n"
-                "• سیستم اتحاد\n\n"
-                "به کانال راهنما مراجعه کن یا آموزش را شروع کن.",
-                reply_markup=keyboard,
+                "📖 راهنمای کامل بازی در کانال زیر موجود است:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📖 راهنمای بازی", url=self.config.GUIDE_CHANNEL)],
+                    [InlineKeyboardButton("🏠 بازگشت", callback_data="back_to_main")]
+                ]),
                 parse_mode='HTML'
             )
-        
-        elif data == "battle":
-            keyboard = self.keyboards.battle_menu_keyboard()
-            await query.edit_message_text(
-                "⚔️ <b>منوی جنگ</b>\n\n"
-                "انتخاب کن:\n\n"
-                "🎯 <b>حمله:</b> حمله به قبیله دیگر\n"
-                "🛡 <b>دفاع:</b> بررسی وضعیت دفاعی\n"
-                "🏹 <b>آموزش نیرو:</b> آموزش نیروهای جدید\n"
-                "🗺 <b>نقشه:</b> مشاهده نقشه جهان\n"
-                "⚔️ <b>نبردهای فعال:</b> جنگ‌های در جریان",
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        
-        elif data == "build":
-            keyboard = self.keyboards.build_menu_keyboard()
-            user_data = self.db.get_user_data(user_id)
-            
-            await query.edit_message_text(
-                f"🏗 <b>منوی ساخت‌وساز</b>\n\n"
-                f"🏛 قبیله: {user_data['clan_name']}\n"
-                f"📍 قلمرو: {user_data['territories']} منطقه\n\n"
-                f"ساختمان‌های قابل ساخت:\n"
-                f"🏯 <b>قلعه:</b> افزایش دفاع\n"
-                f"🏹 <b>آموزشگاه:</b> آموزش نیروهای بهتر\n"
-                f"💰 <b>بازار:</b> افزایش درآمد\n"
-                f"🌾 <b>مزرعه:</b> تولید غذا\n"
-                f"🪵 <b>جنگلداری:</b> تولید چوب\n"
-                f"🪨 <b>معدن:</b> تولید سنگ",
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        
-        elif data == "economy":
-            keyboard = self.keyboards.economy_menu_keyboard()
-            user_data = self.db.get_user_data(user_id)
-            
-            await query.edit_message_text(
-                f"💰 <b>منوی اقتصاد</b>\n\n"
-                f"💰 طلا: <code>{user_data['gold']:,}</code>\n"
-                f"🌾 غذا: <code>{user_data['food']:,}</code>\n"
-                f"🪵 چوب: <code>{user_data['wood']:,}</code>\n"
-                f"🪨 سنگ: <code>{user_data['stone']:,}</code>\n\n"
-                f"عملیات اقتصادی:\n"
-                f"🔄 <b>تجارت:</b> مبادله منابع\n"
-                f"📈 <b>بازار:</b> خرید و فروش\n"
-                f"🏛 <b>مالیات:</b> تنظیم مالیات\n"
-                f"📊 <b>گزارش:</b> گزارش مالی",
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        
-        elif data == "alliance":
-            keyboard = self.keyboards.alliance_menu_keyboard()
-            user_data = self.db.get_user_data(user_id)
-            alliance_name = user_data.get('alliance_name', 'بدون اتحاد')
-            
-            await query.edit_message_text(
-                f"🤝 <b>منوی اتحاد</b>\n\n"
-                f"اتحاد فعلی: <b>{alliance_name}</b>\n\n"
-                f"عملیات اتحاد:\n"
-                f"➕ <b>ایجاد اتحاد:</b> ایجاد اتحاد جدید\n"
-                f"👥 <b>پیوستن:</b> پیوستن به اتحاد موجود\n"
-                f"📜 <b>لیست اتحادها:</b> مشاهده اتحادهای فعال\n"
-                f"🗣 <b>مذاکره:</b> مذاکره با دیگر قبایل\n"
-                f"📊 <b>اعضای اتحاد:</b> مشاهده اعضای اتحاد",
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        
-        elif data == "stats":
-            user_data = self.db.get_user_data(user_id)
-            stats = self.db.get_user_stats(user_id)
-            
-            await query.edit_message_text(
-                f"📊 <b>آمار شخصی</b>\n\n"
-                f"🏛 قبیله: {user_data['clan_name']}\n"
-                f"👑 لقب: {self.clan_manager.get_clan_title(user_data['clan_name'])}\n"
-                f"🎮 کد دعوت: <code>{user_data.get('invite_code', '---')}</code>\n\n"
-                f"⚔️ <b>آمار جنگی:</b>\n"
-                f"• پیروزی‌ها: {stats.get('wins', 0)}\n"
-                f"• شکست‌ها: {stats.get('losses', 0)}\n"
-                f"• کشته‌ها: {stats.get('kills', 0)}\n\n"
-                f"💰 <b>آمار اقتصادی:</b>\n"
-                f"• کل درآمد: {stats.get('total_income', 0):,} طلا\n"
-                f"• کل هزینه: {stats.get('total_expense', 0):,} طلا\n\n"
-                f"📅 <b>تاریخچه:</b>\n"
-                f"• عضو از: {user_data.get('registered_at', '---')}",
-                reply_markup=self.keyboards.main_menu_keyboard(),
-                parse_mode='HTML'
-            )
-        
-        elif data == "start_game":
-            await self.start(update, context)
         
         elif data == "back_to_main":
             await self.start(update, context)
         
-        elif data == "admin_panel":
-            await self.admin_panel(update, context)
-        
-        elif data == "admin_add_user":
-            await self.admin_add_user(update, context)
-        
-        elif data.startswith("battle_"):
-            await self.handle_battle_action(query, data)
+        elif data == "start_game":
+            await self.start(update, context)
     
-    async def handle_battle_action(self, query, data):
-        """مدیریت اقدامات جنگی"""
-        action = data.split("_")[1]
-        
-        if action == "attack":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎯 حمله به AI", callback_data="attack_ai")],
-                [InlineKeyboardButton("⚔️ حمله به بازیکن", callback_data="attack_player")],
-                [InlineKeyboardButton("🏠 بازگشت", callback_data="battle")]
-            ])
-            
-            await query.edit_message_text(
-                "🎯 <b>انتخاب نوع حمله</b>\n\n"
-                "🔹 <b>حمله به AI:</b> قبایل کنترل شده توسط هوش مصنوعی\n"
-                "• خطر کمتر\n"
-                "• غنائم متوسط\n"
-                "• مناسب برای تمرین\n\n"
-                "🔸 <b>حمله به بازیکن:</b> قبایل دیگر بازیکنان\n"
-                "• خطر بیشتر\n"
-                "• غنائم زیاد\n"
-                "• افتخار و رتبه",
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-    
-    async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def admin_panel(self, update: Update, context: CallbackContext):
         """پنل مدیریت مالک"""
         user_id = update.effective_user.id
         
@@ -412,39 +263,20 @@ class AryaboomBot:
             return
         
         keyboard = self.keyboards.admin_panel_keyboard()
-        
-        # دریافت آمار کلی
         stats = self.db.get_stats()
-        all_users = self.db.get_all_users()
-        
-        stats_text = f"""
-👑 <b>پنل مدیریت آریابوم</b>
-مالک: {self.config.OWNER_USERNAME}
-
-📊 <b>آمار کلی سیستم:</b>
-👥 کاربران فعال: {stats['active_users']}
-🏛 قبایل پر: {stats['occupied_clans']} از 12
-🤖 قبایل AI: {stats['ai_clans']}
-📅 آخرین ثبت‌نام: {stats['last_registration']}
-
-👤 <b>کاربران اخیر:</b>
-"""
-        
-        # نمایش ۵ کاربر آخر
-        for i, user in enumerate(all_users[:5], 1):
-            user_id, username, clan_name, level, reg_date = user
-            stats_text += f"{i}. {clan_name} | @{username or 'بدون نام'} | سطح {level}\n"
-        
-        if len(all_users) > 5:
-            stats_text += f"\n... و {len(all_users) - 5} کاربر دیگر"
         
         await update.message.reply_text(
-            stats_text,
+            f"👑 <b>پنل مدیریت آریابوم</b>\n\n"
+            f"📊 آمار کلی:\n"
+            f"👥 کاربران فعال: {stats['active_users']}\n"
+            f"🏛 قبایل پر: {stats['occupied_clans']} از 12\n"
+            f"🤖 قبایل AI: {stats['ai_clans']}\n\n"
+            f"دستورات مدیریت:",
             reply_markup=keyboard,
             parse_mode='HTML'
         )
     
-    async def list_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def list_users(self, update: Update, context: CallbackContext):
         """لیست کاربران برای مالک"""
         user_id = update.effective_user.id
         
@@ -458,20 +290,15 @@ class AryaboomBot:
             await update.message.reply_text("📭 هیچ کاربری ثبت نشده است.")
             return
         
-        users_text = "👥 <b>لیست کاربران آریابوم</b>\n\n"
+        users_text = "👥 <b>لیست کاربران</b>\n\n"
+        for user in users[:10]:  # فقط 10 کاربر اول
+            user_id, username, clan_name, level, power, gold, reg_date = user
+            users_text += f"🏛 {clan_name}\n👤 @{username}\n🎮 سطح: {level}\n💰 طلا: {gold:,}\n\n"
         
-        for i, user in enumerate(users, 1):
-            user_id, username, clan_name, level, reg_date = user
-            users_text += f"{i}. <b>{clan_name}</b>\n"
-            users_text += f"   👤 @{username or 'بدون نام'}\n"
-            users_text += f"   🆔 <code>{user_id}</code>\n"
-            users_text += f"   🎮 سطح: {level}\n"
-            users_text += f"   📅 {reg_date[:10]}\n\n"
+        if len(users) > 10:
+            users_text += f"\n... و {len(users) - 10} کاربر دیگر"
         
-        await update.message.reply_text(
-            users_text,
-            parse_mode='HTML'
-        )
+        await update.message.reply_text(users_text, parse_mode='HTML')
     
     def setup_handlers(self):
         """تنظیم هندلرهای بات"""
@@ -481,7 +308,7 @@ class AryaboomBot:
             entry_points=[CommandHandler('add_user', self.admin_add_user)],
             states={
                 "SELECT_CLAN": [CallbackQueryHandler(self.handle_clan_selection)],
-                "ENTER_USER_ID": [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_user_id_input)]
+                "ENTER_USER_ID": [MessageHandler(Filters.text & ~Filters.command, self.handle_user_id_input)]
             },
             fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)]
         )
@@ -494,100 +321,93 @@ class AryaboomBot:
         # هندلرهای مالک
         self.application.add_handler(CommandHandler("panel", self.admin_panel))
         self.application.add_handler(CommandHandler("list_users", self.list_users))
-        self.application.add_handler(CommandHandler("stats", self.admin_panel))
         
         # هندلر خطا
         self.application.add_error_handler(self.error_handler)
     
-    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
+    async def error_handler(self, update: Update, context: CallbackContext):
         """مدیریت خطاها"""
-        logger.error(f"Exception while handling an update: {context.error}")
+        logger.error(f"Exception: {context.error}")
         
         try:
-            # اطلاع به مالک
-            error_msg = (
-                f"❌ <b>خطا در بات آریابوم</b>\n\n"
-                f"📝 <b>خطا:</b> {str(context.error)[:500]}\n\n"
-                f"⏰ زمان: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            
             await context.bot.send_message(
                 chat_id=self.config.OWNER_ID,
-                text=error_msg,
-                parse_mode='HTML'
+                text=f"❌ خطا در بات: {str(context.error)[:200]}"
             )
-        except Exception as e:
-            logger.error(f"Error sending error notification: {e}")
-    
-    async def set_webhook(self):
-        """تنظیم Webhook برای Render"""
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
-        
-        await self.application.bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
-        
-        logger.info(f"✅ Webhook set to: {webhook_url}")
-        return webhook_url
+        except:
+            pass
     
     def create_app(self):
-        """ساخت اپلیکیشن"""
-        self.application = Application.builder() \
-            .token(self.config.BOT_TOKEN) \
-            .build()
-        
-        # تنظیم هندلرها
+        """ساخت اپلیکیشن برای نسخه 13.15"""
+        self.application = Application.builder().token(self.config.BOT_TOKEN).build()
         self.setup_handlers()
-        
         return self.application
     
-    async def run_webhook(self):
-        """اجرای بات با Webhook"""
-        app = self.create_app()
+    def run_polling(self):
+        """اجرای بات با Polling"""
+        self.application = self.create_app()
+        logger.info("🤖 Bot starting with polling...")
+        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+    def run_webhook(self):
+        """اجرای بات با Webhook برای Render"""
+        self.application = self.create_app()
         
         # تنظیم Webhook
-        webhook_url = await self.set_webhook()
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
         
-        logger.info(f"🤖 Aryaboom Bot is starting with Webhook...")
+        # برای نسخه 13.15 باید از Updater استفاده کنیم
+        updater = Updater(token=self.config.BOT_TOKEN, use_context=True)
         
-        # شروع Webhook
-        await app.initialize()
-        await app.start()
+        # اضافه کردن هندلرها به Updater
+        dp = updater.dispatcher
         
+        # هندلر مالک برای افزودن کاربر
+        add_user_conv = ConversationHandler(
+            entry_points=[CommandHandler('add_user', self.admin_add_user)],
+            states={
+                "SELECT_CLAN": [CallbackQueryHandler(self.handle_clan_selection)],
+                "ENTER_USER_ID": [MessageHandler(Filters.text & ~Filters.command, self.handle_user_id_input)]
+            },
+            fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)]
+        )
+        
+        # هندلرهای اصلی
+        dp.add_handler(CommandHandler("start", self.start))
+        dp.add_handler(add_user_conv)
+        dp.add_handler(CallbackQueryHandler(self.handle_callback))
+        dp.add_handler(CommandHandler("panel", self.admin_panel))
+        dp.add_handler(CommandHandler("list_users", self.list_users))
+        
+        # هندلر خطا
+        dp.add_error_handler(self.error_handler)
+        
+        # تنظیم Webhook
         PORT = int(os.getenv('PORT', 10000))
-        
-        await app.updater.start_webhook(
+        updater.start_webhook(
             listen="0.0.0.0",
             port=PORT,
             url_path="webhook",
-            webhook_url=webhook_url,
-            allowed_updates=Update.ALL_TYPES
+            webhook_url=webhook_url
         )
         
-        logger.info(f"✅ Bot is running on port {PORT}")
+        logger.info(f"🤖 Bot running on port {PORT} with webhook")
         logger.info(f"✅ Webhook URL: {webhook_url}")
         
         # نگه داشتن برنامه
-        await asyncio.Event().wait()
+        updater.idle()
 
-# تابع اصلی
-async def main():
+# تابع اصلی ساده شده
+def main():
     bot = AryaboomBot()
     
     # بررسی محیط اجرا
     if os.getenv('RENDER'):
         logger.info("🚀 Running in Render environment (Webhook mode)")
-        await bot.run_webhook()
+        bot.run_webhook()
     else:
         logger.info("💻 Running in local environment (Polling mode)")
-        app = bot.create_app()
-        await app.initialize()
-        await app.start()
-        logger.info("🤖 Bot is running with polling...")
-        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        await asyncio.Event().wait()
+        bot.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
