@@ -3,7 +3,7 @@
 """
 Aryaboom Bot - Clan Warfare Telegram Game
 مالک: @amele55 | ایدی: 8588773170
-نسخه سازگار با Python 3.13
+نسخه ساده شده
 """
 
 import os
@@ -33,10 +33,13 @@ class AryaboomBot:
         self.db = Database()
         self.keyboards = Keyboards()
         self.clan_manager = ClanManager()
-        
+    
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /start - صفحه اصلی بازی"""
+        """دستور /start"""
         user_id = update.effective_user.id
+        user = update.effective_user
+        
+        logger.info(f"User {user_id} (@{user.username}) started the bot")
         
         # بررسی آیا کاربر تأیید شده است
         if not self.db.is_user_verified(user_id):
@@ -48,28 +51,22 @@ class AryaboomBot:
             )
             return
         
-        # کاربر تأیید شده - نمایش صفحه اصلی
+        # کاربر تأیید شده
         user_data = self.db.get_user_data(user_id)
-        if not user_data:
-            await update.message.reply_text("❌ خطا در دریافت اطلاعات کاربر.")
-            return
-        
         keyboard = self.keyboards.main_menu_keyboard()
         
         welcome_text = f"""
 🏛 <b>آریابوم - جنگ تمدن‌ها</b>
 
-سلام {self.clan_manager.get_clan_title(user_data['clan_name'])} {user_data['clan_name']}! 👑
-{self.clan_manager.get_clan_emoji(user_data['clan_name'])} سطح: {user_data['level']} | ⚡ قدرت: {user_data['power']}
+سلام {self.clan_manager.get_clan_title(user_data['clan_name'])}! 👑
+قبیله: {user_data['clan_name']}
+سطح: {user_data['level']}
 
-💼 <b>وضعیت فعلی:</b>
-💰 طلا: <code>{user_data['gold']:,}</code>
-🌾 غذا: <code>{user_data['food']:,}</code>
-⚔️ نیروها: <code>{user_data['troops']:,}</code>
+💰 طلا: {user_data['gold']:,}
+🌾 غذا: {user_data['food']:,}
+⚔️ نیروها: {user_data['troops']:,}
 
-📍 <b>قلمرو:</b> {user_data['territories']} منطقه
-🤝 <b>اتحاد:</b> {user_data.get('alliance_name', 'بدون اتحاد')}
-🎮 <b>کد دعوت:</b> <code>{user_data.get('invite_code', '---')}</code>
+برای شروع از دکمه‌های زیر استفاده کن:
         """
         
         await update.message.reply_text(
@@ -90,7 +87,7 @@ class AryaboomBot:
         keyboard = self.keyboards.clan_selection_keyboard()
         await update.message.reply_text(
             "🤴 <b>افزودن کاربر جدید</b>\n\n"
-            "لیست قبایل موجود را انتخاب کن:",
+            "قبیله مورد نظر را انتخاب کن:",
             reply_markup=keyboard,
             parse_mode='HTML'
         )
@@ -105,39 +102,27 @@ class AryaboomBot:
             await query.edit_message_text("❌ عملیات لغو شد.")
             return ConversationHandler.END
         
-        try:
-            clan_index = int(query.data.split("_")[1])
-            context.user_data['selected_clan'] = clan_index
-            
-            clan_name = self.config.CLANS[clan_index]["name"]
-            clan_emoji = self.config.CLANS[clan_index]["emoji"]
-            
-            await query.edit_message_text(
-                f"{clan_emoji} قبیله انتخاب شده: <b>{clan_name}</b>\n\n"
-                "📝 لطفاً <b>ایدی عددی</b> کاربر را وارد کن:\n\n"
-                "یا /cancel برای لغو",
-                parse_mode='HTML'
-            )
-            return "ENTER_USER_ID"
-        except Exception as e:
-            logger.error(f"Error in clan selection: {e}")
-            await query.edit_message_text("❌ خطا در انتخاب قبیله.")
-            return ConversationHandler.END
+        clan_index = int(query.data.split("_")[1])
+        context.user_data['selected_clan'] = clan_index
+        
+        clan_name = self.config.CLANS[clan_index]["name"]
+        await query.edit_message_text(
+            f"🏛 قبیله: <b>{clan_name}</b>\n\n"
+            "لطفاً ایدی عددی کاربر را وارد کن:",
+            parse_mode='HTML'
+        )
+        return "ENTER_USER_ID"
     
     async def handle_user_id_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """دریافت ایدی کاربر از مالک"""
         user_id_input = update.message.text
-        
-        if user_id_input == "/cancel":
-            await update.message.reply_text("❌ عملیات لغو شد.")
-            return ConversationHandler.END
         
         if not user_id_input.isdigit():
             await update.message.reply_text("❌ ایدی باید عددی باشد!")
             return "ENTER_USER_ID"
         
         new_user_id = int(user_id_input)
-        clan_index = context.user_data.get('selected_clan', 0)
+        clan_index = context.user_data['selected_clan']
         
         # ثبت کاربر جدید
         result = self.db.add_new_user(
@@ -150,14 +135,11 @@ class AryaboomBot:
             # ارسال پیام به کاربر جدید
             try:
                 welcome_keyboard = self.keyboards.welcome_keyboard()
-                clan_title = self.clan_manager.get_clan_title(result['clan_name'])
-                
                 welcome_message = f"""
 🎉 <b>به آریابوم خوش آمدید!</b>
 
-🏛 <b>قبیله شما:</b> {result['clan_name']}
-👑 <b>لقب شما:</b> {clan_title}
-🎮 <b>کد دعوت شما:</b> <code>{result['invite_code']}</code>
+🏛 قبیله شما: {result['clan_name']}
+🎮 کد دعوت: {result['invite_code']}
 
 برای شروع بازی دستور /start را بزن.
                 """
@@ -171,15 +153,10 @@ class AryaboomBot:
             except Exception as e:
                 logger.error(f"Error sending welcome: {e}")
             
-            # اطلاع به مالک
-            keyboard = self.keyboards.admin_panel_keyboard()
             await update.message.reply_text(
-                f"✅ <b>کاربر ثبت شد!</b>\n\n"
-                f"🏛 قبیله: {result['clan_name']}\n"
-                f"🆔 ایدی: {new_user_id}\n"
-                f"🎮 کد دعوت: {result['invite_code']}",
-                reply_markup=keyboard,
-                parse_mode='HTML'
+                f"✅ کاربر ثبت شد!\n"
+                f"قبیله: {result['clan_name']}\n"
+                f"کد دعوت: {result['invite_code']}"
             )
         else:
             await update.message.reply_text(f"❌ {result['message']}")
@@ -195,23 +172,15 @@ class AryaboomBot:
         
         if data == "news_channel":
             keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("📢 کانال اخبار", url=self.config.NEWS_CHANNEL)
+                InlineKeyboardButton("📢 عضویت در کانال", url=self.config.NEWS_CHANNEL)
             ]])
-            
             await query.edit_message_text(
-                "📢 <b>کانال رسمی اخبار آریابوم</b>",
-                reply_markup=keyboard,
-                parse_mode='HTML'
+                "کانال رسمی اخبار بازی:",
+                reply_markup=keyboard
             )
         
         elif data == "admin_panel":
             await self.admin_panel(update, context)
-        
-        elif data == "admin_add_user":
-            await self.admin_add_user(update, context)
-        
-        elif data == "start_game":
-            await self.start(update, context)
     
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """پنل مدیریت مالک"""
@@ -223,16 +192,20 @@ class AryaboomBot:
         
         keyboard = self.keyboards.admin_panel_keyboard()
         
+        stats = self.db.get_stats()
+        message = f"""
+👑 <b>پنل مدیریت</b>
+
+👥 کاربران: {stats['active_users']}
+🏛 قبایل پر: {stats['occupied_clans']}
+🤖 قبایل AI: {stats['ai_clans']}
+        """
+        
         await update.message.reply_text(
-            "👑 <b>پنل مدیریت آریابوم</b>\n\n"
-            "دستورات مدیریت:",
+            message,
             reply_markup=keyboard,
             parse_mode='HTML'
         )
-    
-    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """مدیریت خطاها"""
-        logger.error(f"Exception: {context.error}")
     
     def setup_handlers(self, application: Application):
         """تنظیم هندلرهای بات"""
@@ -251,12 +224,7 @@ class AryaboomBot:
         application.add_handler(CommandHandler("start", self.start))
         application.add_handler(add_user_conv)
         application.add_handler(CallbackQueryHandler(self.handle_callback))
-        
-        # هندلر مالک
         application.add_handler(CommandHandler("panel", self.admin_panel))
-        
-        # هندلر خطا
-        application.add_error_handler(self.error_handler)
     
     def run(self):
         """اجرای بات"""
@@ -270,7 +238,7 @@ class AryaboomBot:
         
         # شروع بات
         logger.info("🤖 Aryaboom Bot is starting...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application.run_polling()
 
 # تابع اصلی
 def main():
