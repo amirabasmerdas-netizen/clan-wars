@@ -12,8 +12,8 @@ TOKEN = os.environ.get('BOT_TOKEN', '')
 OWNER_ID = int(os.environ.get('OWNER_ID', '8588773170'))
 CHANNEL_ID = os.environ.get('CHANNEL_ID', '')
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///game.db')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
-BOT_USERNAME = os.environ.get('BOT_USERNAME', '')
+WEBHOOK_URL = os.environ.get('RENDER_EXTERNAL_URL', '')  # Render خودش اینو میده
+BOT_USERNAME = os.environ.get('BOT_USERNAME', '@YourBotUsername')
 
 # بررسی وجود توکن
 if not TOKEN:
@@ -34,15 +34,23 @@ logger = logging.getLogger(__name__)
 # ========== توابع کمکی دیتابیس ==========
 def get_db_connection():
     """ایجاد اتصال به دیتابیس"""
-    # اگر DATABASE_URL از Render باشد (PostgreSQL)
-    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-        import psycopg2
-        # تبدیل URL به فرمت مناسب
-        db_url = DATABASE_URL.replace('postgres://', 'postgresql://')
-        conn = psycopg2.connect(db_url, sslmode='require')
-    else:
-        # SQLite برای توسعه محلی
-        conn = sqlite3.connect('game.db', check_same_thread=False)
+    try:
+        # برای Render (PostgreSQL)
+        if DATABASE_URL and DATABASE_URL.startswith('postgres'):
+            import psycopg2
+            # تبدیل postgres:// به postgresql://
+            db_url = DATABASE_URL.replace('postgres://', 'postgresql://')
+            conn = psycopg2.connect(db_url, sslmode='require')
+            logger.info("✅ اتصال به PostgreSQL برقرار شد")
+            return conn
+    except ImportError:
+        logger.warning("⚠️ psycopg2 نصب نشده، از SQLite استفاده می‌شود")
+    except Exception as e:
+        logger.error(f"❌ خطا در اتصال به PostgreSQL: {e}")
+    
+    # SQLite برای توسعه محلی و Fallback
+    conn = sqlite3.connect('game.db', check_same_thread=False)
+    logger.info("✅ اتصال به SQLite برقرار شد")
     return conn
 
 def init_database():
@@ -50,41 +58,8 @@ def init_database():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # تشخیص نوع دیتابیس
-    is_postgres = DATABASE_URL and DATABASE_URL.startswith('postgres://')
-    
-    # ========== جدول بازیکنان ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS players (
-                user_id BIGINT PRIMARY KEY,
-                username VARCHAR(255),
-                country VARCHAR(100),
-                gold INTEGER DEFAULT 1000,
-                iron INTEGER DEFAULT 500,
-                stone INTEGER DEFAULT 500,
-                food INTEGER DEFAULT 1000,
-                wood INTEGER DEFAULT 500,
-                army_infantry INTEGER DEFAULT 50,
-                army_archer INTEGER DEFAULT 30,
-                army_cavalry INTEGER DEFAULT 20,
-                army_spearman INTEGER DEFAULT 40,
-                army_thief INTEGER DEFAULT 10,
-                defense_wall INTEGER DEFAULT 50,
-                defense_tower INTEGER DEFAULT 20,
-                defense_gate INTEGER DEFAULT 30,
-                mine_gold_level INTEGER DEFAULT 1,
-                mine_iron_level INTEGER DEFAULT 1,
-                mine_stone_level INTEGER DEFAULT 1,
-                farm_level INTEGER DEFAULT 1,
-                barracks_level INTEGER DEFAULT 1,
-                join_date TIMESTAMP,
-                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                diplomacy_notifications INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    else:
+    try:
+        # ========== جدول بازیکنان ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS players (
                 user_id INTEGER PRIMARY KEY,
@@ -113,22 +88,8 @@ def init_database():
                 diplomacy_notifications INTEGER DEFAULT 1
             )
         ''')
-    
-    # ========== جدول کشورها ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS countries (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(100) UNIQUE,
-                special_resource VARCHAR(50),
-                controller VARCHAR(20) DEFAULT 'AI',
-                player_id BIGINT,
-                capital_x INTEGER DEFAULT 100,
-                capital_y INTEGER DEFAULT 100,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    else:
+        
+        # ========== جدول کشورها ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS countries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,27 +101,26 @@ def init_database():
                 capital_y INTEGER DEFAULT 100
             )
         ''')
-    
-    # ========== جدول نبردها ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS battles (
-                id SERIAL PRIMARY KEY,
-                attacker_id BIGINT,
-                defender_id BIGINT,
-                attacker_country VARCHAR(100),
-                defender_country VARCHAR(100),
-                result VARCHAR(50),
-                attacker_losses VARCHAR(255),
-                defender_losses VARCHAR(255),
-                gold_looted INTEGER DEFAULT 0,
-                iron_looted INTEGER DEFAULT 0,
-                food_looted INTEGER DEFAULT 0,
-                battle_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    else:
+        
+        # ========== کشورهای پیش‌فرض ==========
+        countries = [
+            ('پارس', 'اسب', 100, 100),
+            ('روم', 'آهن', 200, 100),
+            ('مصر', 'طلا', 100, 200),
+            ('چین', 'غذا', 200, 200),
+            ('یونان', 'سنگ', 150, 150),
+            ('بابل', 'دانش', 50, 150),
+            ('آشور', 'نفت', 150, 50),
+            ('کارتاژ', 'کشتی', 250, 100),
+            ('هند', 'ادویه', 100, 250),
+            ('مقدونیه', 'فیل', 200, 50)
+        ]
+        
+        for name, resource, x, y in countries:
+            cursor.execute('INSERT OR IGNORE INTO countries (name, special_resource, capital_x, capital_y) VALUES (?, ?, ?, ?)', 
+                          (name, resource, x, y))
+        
+        # ========== جدول نبردها ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS battles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,32 +129,16 @@ def init_database():
                 attacker_country TEXT,
                 defender_country TEXT,
                 result TEXT,
-                attacker_losses TEXT,
-                defender_losses TEXT,
+                attacker_losses INTEGER,
+                defender_losses INTEGER,
                 gold_looted INTEGER DEFAULT 0,
                 iron_looted INTEGER DEFAULT 0,
                 food_looted INTEGER DEFAULT 0,
                 battle_date TIMESTAMP
             )
         ''')
-    
-    # ========== جدول دیپلماسی ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS diplomacy (
-                id SERIAL PRIMARY KEY,
-                from_player_id BIGINT,
-                to_player_id BIGINT,
-                from_country VARCHAR(100),
-                to_country VARCHAR(100),
-                relation_type VARCHAR(50),
-                status VARCHAR(50) DEFAULT 'pending',
-                message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '7 days')
-            )
-        ''')
-    else:
+        
+        # ========== جدول دیپلماسی ==========
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS diplomacy (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,116 +153,23 @@ def init_database():
                 expires_at TIMESTAMP
             )
         ''')
-    
-    # ========== جدول معادن ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS mines (
-                id SERIAL PRIMARY KEY,
-                player_id BIGINT,
-                country VARCHAR(100),
-                mine_type VARCHAR(50),
-                level INTEGER DEFAULT 1,
-                last_collected TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    else:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS mines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                player_id INTEGER,
-                country TEXT,
-                mine_type TEXT,
-                level INTEGER DEFAULT 1,
-                last_collected TIMESTAMP
-            )
-        ''')
-    
-    # ========== جدول فصل‌ها ==========
-    if is_postgres:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS seasons (
-                id SERIAL PRIMARY KEY,
-                season_number INTEGER DEFAULT 1,
-                start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                end_date TIMESTAMP,
-                winner_country VARCHAR(100),
-                winner_player_id BIGINT,
-                is_active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    else:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS seasons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                season_number INTEGER DEFAULT 1,
-                start_date TIMESTAMP,
-                end_date TIMESTAMP,
-                winner_country TEXT,
-                winner_player_id INTEGER,
-                is_active BOOLEAN DEFAULT 1
-            )
-        ''')
-    
-    # ========== اضافه کردن کشورهای پیش‌فرض ==========
-    countries = [
-        ('پارس', 'اسب', 100, 100),
-        ('روم', 'آهن', 200, 100),
-        ('مصر', 'طلا', 100, 200),
-        ('چین', 'غذا', 200, 200),
-        ('یونان', 'سنگ', 150, 150),
-        ('بابل', 'دانش', 50, 150),
-        ('آشور', 'نفت', 150, 50),
-        ('کارتاژ', 'کشتی', 250, 100),
-        ('هند', 'ادویه', 100, 250),
-        ('مقدونیه', 'فیل', 200, 50)
-    ]
-    
-    for name, resource, x, y in countries:
-        if is_postgres:
-            cursor.execute('''
-                INSERT INTO countries (name, special_resource, capital_x, capital_y, created_at)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (name) DO NOTHING
-            ''', (name, resource, x, y))
-        else:
-            cursor.execute('''
-                INSERT OR IGNORE INTO countries (name, special_resource, capital_x, capital_y)
-                VALUES (?, ?, ?, ?)
-            ''', (name, resource, x, y))
-    
-    # ========== ایجاد فصل اول ==========
-    cursor.execute('SELECT COUNT(*) FROM seasons')
-    if cursor.fetchone()[0] == 0:
-        if is_postgres:
-            cursor.execute('''
-                INSERT INTO seasons (season_number, start_date, is_active)
-                VALUES (1, CURRENT_TIMESTAMP, true)
-            ''')
-        else:
-            cursor.execute('''
-                INSERT INTO seasons (season_number, start_date, is_active)
-                VALUES (1, ?, 1)
-            ''', (datetime.now(),))
-    
-    conn.commit()
-    conn.close()
-    
-    logger.info("✅ دیتابیس اولیه‌سازی شد")
+        
+        conn.commit()
+        logger.info("✅ دیتابیس اولیه‌سازی شد")
+        
+    except Exception as e:
+        logger.error(f"❌ خطا در اولیه‌سازی دیتابیس: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
 
 # ========== اجرای اولیه‌سازی دیتابیس ==========
 init_database()
 
 # ========== توابع کمکی ==========
-def get_db():
-    """دریافت اتصال دیتابیس"""
-    return get_db_connection()
-
 def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     """تابع کمکی برای اجرای کوئری‌ها"""
-    conn = get_db()
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
@@ -341,12 +192,22 @@ def execute_query(query, params=(), fetchone=False, fetchall=False, commit=False
             conn.rollback()
         raise e
     finally:
-        if not commit:
-            conn.close()
+        conn.close()
 
 # ========== توابع محاسباتی ==========
 def calculate_army_power(player_data):
     """محاسبه قدرت کلی ارتش"""
+    if isinstance(player_data, tuple):
+        # تبدیل tuple به dict
+        player_dict = {
+            'army_infantry': player_data[0],
+            'army_archer': player_data[1],
+            'army_cavalry': player_data[2],
+            'army_spearman': player_data[3],
+            'army_thief': player_data[4]
+        }
+        player_data = player_dict
+    
     power = (
         player_data.get('army_infantry', 0) * 1 +
         player_data.get('army_archer', 0) * 1.5 +
@@ -355,15 +216,6 @@ def calculate_army_power(player_data):
         player_data.get('army_thief', 0) * 0.8
     )
     return power
-
-def calculate_defense_power(player_data):
-    """محاسبه قدرت دفاع"""
-    defense = (
-        player_data.get('defense_wall', 0) * 1 +
-        player_data.get('defense_tower', 0) * 2 +
-        player_data.get('defense_gate', 0) * 1.5
-    )
-    return defense
 
 def calculate_daily_production(user_id):
     """محاسبه تولید روزانه"""
@@ -458,21 +310,70 @@ def main_menu(user_id):
             InlineKeyboardButton("⛏️ معادن", callback_data="mines_farms"),
             InlineKeyboardButton("🌍 کشورها", callback_data="view_countries")
         )
-        keyboard.row(
-            InlineKeyboardButton("📈 آمار من", callback_data="player_stats"),
-            InlineKeyboardButton("📜 تاریخچه", callback_data="history")
-        )
     else:
         # منوی کاربر بدون کشور
         keyboard.row(
             InlineKeyboardButton("🌍 مشاهده کشورها", callback_data="view_countries"),
             InlineKeyboardButton("📊 وضعیت من", callback_data="view_resources")
         )
-        keyboard.row(
-            InlineKeyboardButton("ℹ️ راهنما", callback_data="help"),
-            InlineKeyboardButton("📞 پشتیبانی", callback_data="support")
-        )
     
+    keyboard.row(InlineKeyboardButton("ℹ️ راهنما", callback_data="help"))
+    
+    return keyboard
+
+def army_menu():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        InlineKeyboardButton("👮 پیاده نظام", callback_data="army_infantry"),
+        InlineKeyboardButton("🏹 کمانداران", callback_data="army_archer")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🐎 سوارهنظام", callback_data="army_cavalry"),
+        InlineKeyboardButton("🗡️ نیزه‌داران", callback_data="army_spearman")
+    )
+    keyboard.row(
+        InlineKeyboardButton("👤 دزدان", callback_data="army_thief"),
+        InlineKeyboardButton("⚔️ حمله", callback_data="attack_country")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🏰 دفاع", callback_data="defend_borders"),
+        InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")
+    )
+    return keyboard
+
+def diplomacy_menu():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        InlineKeyboardButton("🕊️ صلح", callback_data="peace_request"),
+        InlineKeyboardButton("⚔️ جنگ", callback_data="declare_war")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🤝 اتحاد", callback_data="request_alliance"),
+        InlineKeyboardButton("💰 تجارت", callback_data="trade_offer")
+    )
+    keyboard.row(
+        InlineKeyboardButton("📜 پیشنهادها", callback_data="view_diplomacy_offers"),
+        InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")
+    )
+    return keyboard
+
+def mines_menu():
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(
+        InlineKeyboardButton("💰 طلا", callback_data="mine_gold"),
+        InlineKeyboardButton("⚒️ آهن", callback_data="mine_iron")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🪨 سنگ", callback_data="mine_stone"),
+        InlineKeyboardButton("🌾 غذا", callback_data="farm_food")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🏗️ سرباز", callback_data="barracks"),
+        InlineKeyboardButton("📦 جمع‌آوری", callback_data="collect_resources")
+    )
+    keyboard.row(
+        InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")
+    )
     return keyboard
 
 # ========== هندلرهای اصلی ==========
@@ -577,8 +478,6 @@ def show_stats(message):
         date_str = date.strftime('%Y-%m-%d') if isinstance(date, datetime) else date[:10]
         stats_text += f"• {attacker} vs {defender}: {result} ({date_str})\n"
     
-    stats_text += f"\n📅 **فصل جاری:** {execute_query('SELECT season_number FROM seasons WHERE is_active = true', fetchone=True)[0]}"
-    
     bot.send_message(
         message.chat.id,
         stats_text,
@@ -634,70 +533,540 @@ def handle_callback(call):
                 reply_markup=keyboard
             )
         
-        # ========== بقیه هندلرها (مشابه قبل اما با استفاده از execute_query) ==========
-        # برای حفظ طول پیام، بقیه کد مشابه قبل اما با استفاده از execute_query
+        # ========== کشور من ==========
+        elif call.data == "my_country":
+            player = execute_query('''
+                SELECT p.country, p.gold, p.iron, p.stone, p.food, p.wood,
+                       p.army_infantry, p.army_archer, p.army_cavalry,
+                       p.army_spearman, p.army_thief,
+                       p.defense_wall, p.defense_tower, p.defense_gate,
+                       c.special_resource
+                FROM players p
+                LEFT JOIN countries c ON p.country = c.name
+                WHERE p.user_id = ?
+            ''', (user_id,), fetchone=True)
+            
+            if player and player[0]:
+                country, gold, iron, stone, food, wood, infantry, archer, cavalry, spearman, thief, wall, tower, gate, resource = player
+                
+                # محاسبه قدرت
+                army_power = calculate_army_power((infantry, archer, cavalry, spearman, thief))
+                
+                text = f"""🏛️ **کشور شما: {country}**
+
+🎁 منبع ویژه: {resource}
+
+💰 **ذخایر:**
+• طلا: {gold}
+• آهن: {iron}
+• سنگ: {stone}
+• غذا: {food}
+• چوب: {wood}
+
+👮 **ارتش:**
+• پیاده نظام: {infantry}
+• کمانداران: {archer}
+• سوارهنظام: {cavalry}
+• نیزه‌داران: {spearman}
+• دزدان: {thief}
+
+🛡️ **دفاع:**
+• دیوار: {wall}
+• برج نگهبانی: {tower}
+• دروازه: {gate}
+
+⚡ **قدرت کلی:**
+• قدرت حمله: {army_power:.1f}"""
+            else:
+                text = "⚠️ شما هنوز کشوری ندارید!\nلطفاً از مالک درخواست کشور کنید."
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=main_menu(user_id)
+            )
+        
+        # ========== مشاهده منابع ==========
+        elif call.data == "view_resources":
+            player = execute_query('''
+                SELECT p.gold, p.iron, p.stone, p.food, p.wood, c.name,
+                       p.mine_gold_level, p.mine_iron_level, p.mine_stone_level, p.farm_level
+                FROM players p
+                LEFT JOIN countries c ON p.country = c.name
+                WHERE p.user_id = ?
+            ''', (user_id,), fetchone=True)
+            
+            if player:
+                gold, iron, stone, food, wood, country, mine_gold, mine_iron, mine_stone, farm = player
+                
+                production = calculate_daily_production(user_id)
+                
+                text = f"""📊 **وضعیت منابع{' - ' + country if country else ''}**
+
+💰 **ذخایر:**
+• طلا: {gold}
+• آهن: {iron}
+• سنگ: {stone}
+• غذا: {food}
+• چوب: {wood}
+
+🏭 **سطح تولیدکننده‌ها:**
+• معدن طلا: سطح {mine_gold}
+• معدن آهن: سطح {mine_iron}
+• معدن سنگ: سطح {mine_stone}
+• مزرعه: سطح {farm}
+
+📈 **تولید روزانه:**
+• طلا: {production['gold'] if production else 0}
+• آهن: {production['iron'] if production else 0}
+• سنگ: {production['stone'] if production else 0}
+• غذا: {production['food'] if production else 0}
+• چوب: {production['wood'] if production else 0}
+
+💡 برای جمع‌آوری منابع به بخش معادن بروید."""
+            else:
+                text = "⚠️ شما هنوز ثبت‌نام نکرده‌اید."
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=main_menu(user_id)
+            )
+        
+        # ========== بخش ارتش ==========
+        elif call.data == "army_info":
+            player = execute_query('''
+                SELECT army_infantry, army_archer, army_cavalry, 
+                       army_spearman, army_thief,
+                       defense_wall, defense_tower, defense_gate,
+                       country
+                FROM players WHERE user_id = ?
+            ''', (user_id,), fetchone=True)
+            
+            if player and player[8]:  # اگر کشور دارد
+                infantry, archer, cavalry, spearman, thief, wall, tower, gate, country = player
+                
+                army_power = calculate_army_power((infantry, archer, cavalry, spearman, thief))
+                
+                text = f"""⚔️ **ارتش و جنگ - {country}**
+
+👮 **نیروهای شما:**
+• پیاده نظام: {infantry}
+• کمانداران: {archer}
+• سوارهنظام: {cavalry}
+• نیزه‌داران: {spearman}
+• دزدان: {thief}
+
+🛡️ **سازه‌های دفاعی:**
+• دیوار: {wall}
+• برج نگهبانی: {tower}
+• دروازه: {gate}
+
+⚡ **قدرت کلی:**
+• قدرت حمله: {army_power:.1f}
+
+از گزینه‌های زیر برای مدیریت ارتش استفاده کنید:"""
+                
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=text,
+                    parse_mode='Markdown',
+                    reply_markup=army_menu()
+                )
+            else:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="⚠️ شما هنوز کشوری ندارید!",
+                    reply_markup=main_menu(user_id)
+                )
+        
+        # ========== دیپلماسی ==========
+        elif call.data == "diplomacy":
+            player = execute_query('SELECT country FROM players WHERE user_id = ?', (user_id,), fetchone=True)
+            
+            if not player or not player[0]:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="⚠️ شما کشوری ندارید!",
+                    reply_markup=main_menu(user_id)
+                )
+                return
+            
+            text = """🤝 **دیپلماسی**
+
+از طریق دیپلماسی می‌توانید با دیگر کشورها:
+• درخواست صلح کنید
+• اعلام جنگ دهید
+• درخواست اتحاد کنید
+• پیشنهاد تجارت دهید
+
+پیشنهادهای دریافتی خود را نیز می‌توانید مشاهده و پاسخ دهید.
+
+لطفاً گزینه مورد نظر را انتخاب کنید:"""
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=diplomacy_menu()
+            )
+        
+        # ========== معادن و مزارع ==========
+        elif call.data == "mines_farms":
+            player = execute_query('''
+                SELECT mine_gold_level, mine_iron_level, mine_stone_level,
+                       farm_level, barracks_level, country,
+                       gold, iron, stone, food, wood
+                FROM players WHERE user_id = ?
+            ''', (user_id,), fetchone=True)
+            
+            if player:
+                mine_gold, mine_iron, mine_stone, farm, barracks, country, gold, iron, stone, food, wood = player
+                
+                production = calculate_daily_production(user_id)
+                
+                text = f"""⛏️ **معادن و مزارع{' - ' + country if country else ''}**
+
+🏭 **سطح سازه‌های شما:**
+💰 معدن طلا: سطح {mine_gold} (تولید: {production['gold'] if production else 0}/روز)
+⚒️ معدن آهن: سطح {mine_iron} (تولید: {production['iron'] if production else 0}/روز)
+🪨 معدن سنگ: سطح {mine_stone} (تولید: {production['stone'] if production else 0}/روز)
+🌾 مزرعه غذا: سطح {farm} (تولید: {production['food'] if production else 0}/روز)
+🏗️ کارخانه سرباز: سطح {barracks}
+
+📦 **منابع ذخیره شده:**
+• طلا: {gold}
+• آهن: {iron}
+• سنگ: {stone}
+• غذا: {food}
+• چوب: {wood}
+
+💡 برای ارتقاء سازه‌ها یا جمع‌آوری منابع گزینه مورد نظر را انتخاب کنید:"""
+            else:
+                text = "⚠️ شما هنوز کشوری ندارید!"
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=mines_menu()
+            )
+        
+        # ========== جمع‌آوری منابع ==========
+        elif call.data == "collect_resources":
+            production = calculate_daily_production(user_id)
+            
+            if production:
+                # افزودن منابع
+                execute_query('''
+                    UPDATE players 
+                    SET gold = gold + ?, 
+                        iron = iron + ?, 
+                        stone = stone + ?, 
+                        food = food + ?,
+                        wood = wood + ?,
+                        last_active = ?
+                    WHERE user_id = ?
+                ''', (
+                    production['gold'],
+                    production['iron'],
+                    production['stone'],
+                    production['food'],
+                    production['wood'],
+                    datetime.now(),
+                    user_id
+                ), commit=True)
+                
+                text = f"""📦 **منابع جمع‌آوری شد!**
+
+💰 طلا: +{production['gold']}
+⚒️ آهن: +{production['iron']}
+🪨 سنگ: +{production['stone']}
+🍖 غذا: +{production['food']}
+🌲 چوب: +{production['wood']}
+
+منابع به حساب شما اضافه شدند."""
+            else:
+                text = "⚠️ خطا در محاسبه تولید!"
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=mines_menu()
+            )
+        
+        # ========== راهنما ==========
+        elif call.data == "help":
+            text = """ℹ️ **راهنمای بازی جنگ جهانی باستان**
+
+🎮 **چگونه بازی کنیم؟**
+1. با دستور /start بازی را شروع کنید
+2. اگر مالک هستید، بازیکنان جدید اضافه کنید
+3. یک کشور انتخاب کنید و آن را مدیریت کنید
+4. ارتش بسازید و معادن را توسعه دهید
+5. با دیگر کشورها دیپلماسی کنید
+6. برای فتح جهان بجنگید!
+
+⚔️ **بخش‌های اصلی:**
+• **ارتش:** ۵ نوع سرباز مختلف
+• **دفاع:** دیوار، برج، دروازه
+• **دیپلماسی:** صلح، جنگ، اتحاد، تجارت
+• **معادن:** طلا، آهن، سنگ، غذا
+• **مزرعه:** تولید غذا
+
+📞 **پشتیبانی:** @amele55"""
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=text,
+                parse_mode='Markdown',
+                reply_markup=main_menu(user_id)
+            )
+        
+        # ========== افزودن بازیکن (مالک) ==========
+        elif call.data == "add_player":
+            if user_id != OWNER_ID:
+                bot.answer_callback_query(call.id, "⛔ دسترسی ممنوع!")
+                return
+            
+            # نمایش کشورهای آزاد
+            countries = execute_query('SELECT name FROM countries WHERE controller = "AI"', fetchall=True)
+            
+            if not countries:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="⚠️ هیچ کشور آزادی وجود ندارد!",
+                    reply_markup=main_menu(user_id)
+                )
+                return
+            
+            keyboard = InlineKeyboardMarkup()
+            for country in countries:
+                keyboard.row(InlineKeyboardButton(
+                    f"🏛️ {country[0]}",
+                    callback_data=f"select_{country[0]}"
+                ))
+            keyboard.row(InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu"))
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="🏛️ انتخاب کشور برای بازیکن جدید:\n\nکشورهای آزاد:",
+                reply_markup=keyboard
+            )
+        
+        # ========== انتخاب کشور برای بازیکن جدید ==========
+        elif call.data.startswith("select_"):
+            if user_id != OWNER_ID:
+                return
+            
+            country_name = call.data.replace("select_", "")
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"کشور '{country_name}' انتخاب شد.\n\nلطفاً آیدی عددی کاربر را ارسال کنید:"
+            )
+            bot.register_next_step_handler(call.message, lambda m: add_player_step(m, country_name))
+        
+        # ========== شروع فصل ==========
+        elif call.data == "start_season":
+            if user_id != OWNER_ID:
+                bot.answer_callback_query(call.id, "⛔ دسترسی ممنوع!")
+                return
+            
+            try:
+                if CHANNEL_ID:
+                    bot.send_message(
+                        CHANNEL_ID,
+                        "🎉 **شروع فصل جدید جنگ‌های باستان!**\n\n"
+                        "جهان باستان زنده شد! کشورها برای فتح جهان آماده می‌شوند...\n\n"
+                        "ساخته شده توسط @amele55\n"
+                        "ورژن 3.0 ربات"
+                    )
+                
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="✅ فصل جدید با موفقیت شروع شد!",
+                    reply_markup=main_menu(user_id)
+                )
+            except Exception as e:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"❌ خطا در شروع فصل: {str(e)}",
+                    reply_markup=main_menu(user_id)
+                )
+        
+        # ========== ریست بازی ==========
+        elif call.data == "reset_game":
+            if user_id != OWNER_ID:
+                bot.answer_callback_query(call.id, "⛔ دسترسی ممنوع!")
+                return
+            
+            keyboard = InlineKeyboardMarkup()
+            keyboard.row(
+                InlineKeyboardButton("✅ بله، ریست کن", callback_data="confirm_reset"),
+                InlineKeyboardButton("❌ خیر، لغو", callback_data="main_menu")
+            )
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="⚠️ **هشدار: ریست کامل بازی**\n\nآیا مطمئن هستید؟\nهمه داده‌ها پاک می‌شوند!",
+                reply_markup=keyboard
+            )
+        
+        elif call.data == "confirm_reset":
+            if user_id != OWNER_ID:
+                return
+            
+            try:
+                # ریست بازیکنان
+                execute_query('''
+                    UPDATE players 
+                    SET country = NULL, 
+                        gold = 1000, iron = 500, stone = 500, food = 1000, wood = 500,
+                        army_infantry = 50, army_archer = 30, army_cavalry = 20,
+                        army_spearman = 40, army_thief = 10,
+                        defense_wall = 50, defense_tower = 20, defense_gate = 30,
+                        mine_gold_level = 1, mine_iron_level = 1, mine_stone_level = 1,
+                        farm_level = 1, barracks_level = 1
+                ''', commit=True)
+                
+                # ریست کشورها
+                execute_query('UPDATE countries SET controller = "AI", player_id = NULL', commit=True)
+                
+                # پاک کردن جدول‌های دیگر
+                execute_query('DELETE FROM battles', commit=True)
+                execute_query('DELETE FROM diplomacy', commit=True)
+                
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="✅ بازی با موفقیت ریست شد!\nهمه کشورها آزاد شدند.",
+                    reply_markup=main_menu(user_id)
+                )
+            except Exception as e:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"❌ خطا در ریست بازی: {str(e)}",
+                    reply_markup=main_menu(user_id)
+                )
+        
+        # ========== سایر دکمه‌ها ==========
+        elif call.data in ["army_infantry", "army_archer", "army_cavalry", "army_spearman", "army_thief",
+                          "attack_country", "defend_borders", "peace_request", "declare_war", 
+                          "request_alliance", "trade_offer", "view_diplomacy_offers",
+                          "mine_gold", "mine_iron", "mine_stone", "farm_food", "barracks"]:
+            
+            # برای سادگی، فعلاً پیام در حال توسعه نشان می‌دهیم
+            action_names = {
+                "army_infantry": "👮 پیاده نظام",
+                "army_archer": "🏹 کمانداران",
+                "army_cavalry": "🐎 سوارهنظام",
+                "army_spearman": "🗡️ نیزه‌داران",
+                "army_thief": "👤 دزدان",
+                "attack_country": "⚔️ حمله به کشور",
+                "defend_borders": "🏰 دفاع از مرز",
+                "peace_request": "🕊️ درخواست صلح",
+                "declare_war": "⚔️ اعلام جنگ",
+                "request_alliance": "🤝 درخواست اتحاد",
+                "trade_offer": "💰 پیشنهاد تجارت",
+                "view_diplomacy_offers": "📜 مشاهده پیشنهادها",
+                "mine_gold": "💰 معدن طلا",
+                "mine_iron": "⚒️ معدن آهن",
+                "mine_stone": "🪨 معدن سنگ",
+                "farm_food": "🌾 مزرعه غذا",
+                "barracks": "🏗️ کارخانه سرباز"
+            }
+            
+            action_name = action_names.get(call.data, call.data)
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"🛠️ **{action_name}**\n\nاین بخش به زودی فعال خواهد شد!\nدر حال حاضر می‌توانید از سایر بخش‌ها استفاده کنید.",
+                reply_markup=main_menu(user_id)
+            )
         
         else:
-            # هندلرهای دیگر (مشابه کد قبلی)
-            handle_other_callbacks(call)
+            bot.answer_callback_query(call.id, "⚠️ این دکمه هنوز فعال نشده است!")
             
     except Exception as e:
         logger.error(f"خطا در هندلر کالبک: {e}")
         bot.answer_callback_query(call.id, "⚠️ خطایی رخ داد! لطفاً دوباره تلاش کنید.")
 
-def handle_other_callbacks(call):
-    """مدیریت سایر کالبک‌ها"""
-    user_id = call.from_user.id
+def add_player_step(message, country_name):
+    """افزودن بازیکن جدید"""
+    user_id = message.from_user.id
     
-    # ========== کشور من ==========
-    if call.data == "my_country":
-        player = execute_query('''
-            SELECT p.country, p.gold, p.iron, p.stone, p.food, p.wood,
-                   p.army_infantry, p.army_archer, p.army_cavalry,
-                   p.army_spearman, p.army_thief,
-                   p.defense_wall, p.defense_tower, p.defense_gate,
-                   c.special_resource
-            FROM players p
-            LEFT JOIN countries c ON p.country = c.name
-            WHERE p.user_id = ?
-        ''', (user_id,), fetchone=True)
+    if user_id != OWNER_ID:
+        bot.reply_to(message, "⛔ دسترسی ممنوع!")
+        return
+    
+    try:
+        new_user_id = int(message.text)
         
-        if player and player[0]:
-            # پردازش داده‌ها و نمایش
-            pass
-        else:
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text="⚠️ شما هنوز کشوری ندارید!",
-                reply_markup=main_menu(user_id)
+        # بررسی اینکه کشور آزاد است
+        country = execute_query('SELECT controller FROM countries WHERE name = ?', (country_name,), fetchone=True)
+        
+        if not country or country[0] != "AI":
+            bot.reply_to(message, "❌ این کشور قبلاً اشغال شده است!")
+            return
+        
+        # اختصاص کشور به بازیکن
+        execute_query('UPDATE countries SET controller = "HUMAN", player_id = ? WHERE name = ?',
+                     (new_user_id, country_name), commit=True)
+        
+        # به‌روزرسانی بازیکن
+        execute_query('UPDATE players SET country = ? WHERE user_id = ?', (country_name, new_user_id), commit=True)
+        
+        # اگر بازیکن وجود ندارد، ایجاد کن
+        if execute_query('SELECT COUNT(*) FROM players WHERE user_id = ?', (new_user_id,), fetchone=True)[0] == 0:
+            execute_query('INSERT INTO players (user_id, country, join_date, last_active) VALUES (?, ?, ?, ?)',
+                         (new_user_id, country_name, datetime.now(), datetime.now()), commit=True)
+        
+        # اطلاع به مالک
+        bot.reply_to(
+            message,
+            f"✅ بازیکن با آیدی {new_user_id} به کشور '{country_name}' اضافه شد!"
+        )
+        
+        # اطلاع به بازیکن جدید
+        try:
+            bot.send_message(
+                new_user_id,
+                f"""🎉 **شما به بازی جنگ جهانی باستان اضافه شدید!**
+
+🏛️ کشور شما: {country_name}
+
+برای شروع بازی /start را بزنید."""
             )
-    
-    # ========== بقیه هندلرها ... ==========
-    # (بقیه کد مشابه کد قبلی اما با استفاده از execute_query)
+        except:
+            bot.reply_to(message, f"⚠️ نتوانستم به کاربر {new_user_id} پیام بدم.")
+            
+    except ValueError:
+        bot.reply_to(message, "⚠️ لطفاً یک آیدی عددی معتبر وارد کنید!")
+    except Exception as e:
+        bot.reply_to(message, f"❌ خطا: {str(e)}")
 
-# ========== توابع کمکی برای Render ==========
-@app.route('/health', methods=['GET'])
-def health_check():
-    """بررسی سلامت سرویس برای Render"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'Ancient War Bot',
-        'version': '3.0',
-        'timestamp': datetime.now().isoformat()
-    }), 200
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook برای تلگرام"""
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return '', 200
-    return 'Bad Request', 400
-
-@app.route('/')
+# ========== Webhook برای Render ==========
+@app.route('/', methods=['GET'])
 def index():
     """صفحه اصلی"""
     return '''
@@ -744,9 +1113,6 @@ def index():
                 text-decoration: none;
                 font-weight: bold;
             }
-            .btn:hover {
-                background: #f0f0f0;
-            }
         </style>
     </head>
     <body>
@@ -760,44 +1126,38 @@ def index():
                 <p>👨‍💻 سازنده: @amele55</p>
             </div>
             
-            <div class="status">
-                <h2>📊 آمار بازی</h2>
-                <p>👥 کاربران: ''' + str(execute_query('SELECT COUNT(*) FROM players', fetchone=True)[0]) + '''</p>
-                <p>🏛️ کشورها: ''' + str(execute_query('SELECT COUNT(*) FROM countries', fetchone=True)[0]) + '''</p>
-                <p>⚔️ نبردها: ''' + str(execute_query('SELECT COUNT(*) FROM battles', fetchone=True)[0]) + '''</p>
-            </div>
-            
             <div style="text-align: center; margin-top: 30px;">
-                <a href="https://t.me/''' + BOT_USERNAME + '''" class="btn" target="_blank">
+                <a href="https://t.me/''' + BOT_USERNAME.replace('@', '') + '''" class="btn" target="_blank">
                     🚀 شروع بازی در تلگرام
                 </a>
-                <a href="/health" class="btn">
-                    ❤️ بررسی سلامت
-                </a>
-            </div>
-            
-            <div style="margin-top: 30px; text-align: center; font-size: 0.9em;">
-                <p>میزبانی شده بر روی Render | پشتیبانی: @amele55</p>
             </div>
         </div>
     </body>
     </html>
     '''
 
-@app.route('/setup', methods=['GET'])
-def setup_webhook():
-    """تنظیم Webhook"""
-    if WEBHOOK_URL:
-        bot.remove_webhook()
-        webhook_url = f"{WEBHOOK_URL}/webhook"
-        bot.set_webhook(url=webhook_url)
-        return f'✅ Webhook تنظیم شد: {webhook_url}'
-    else:
-        return '⚠️ WEBHOOK_URL تنظیم نشده است!'
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook برای تلگرام"""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    return 'Bad Request', 400
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """بررسی سلامت سرویس"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Ancient War Bot',
+        'version': '3.0',
+        'timestamp': datetime.now().isoformat()
+    }), 200
 
 # ========== راه‌اندازی ==========
-def main():
-    """تابع اصلی راه‌اندازی"""
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     
     logger.info("=" * 50)
@@ -805,36 +1165,38 @@ def main():
     logger.info("=" * 50)
     logger.info(f"👑 مالک: {OWNER_ID}")
     logger.info(f"🤖 ربات: {BOT_USERNAME}")
-    logger.info(f"🌐 وب‌هوک: {WEBHOOK_URL}")
-    logger.info(f"🗄️ دیتابیس: {DATABASE_URL[:30]}..." if DATABASE_URL else "🗄️ دیتابیس: SQLite")
-    logger.info("=" * 50)
-    logger.info("✅ سیستم‌های فعال:")
-    logger.info("   ⚔️ سیستم ارتش کامل")
-    logger.info("   🛡️ سیستم دفاع پیشرفته")
-    logger.info("   🤝 دیپلماسی فعال")
-    logger.info("   ⛏️ معادن و تولید منابع")
-    logger.info("   🏆 سیستم فصل‌بندی")
-    logger.info("   📊 آمار و گزارش‌گیری")
+    logger.info(f"🌐 پورت: {port}")
     logger.info("=" * 50)
     
+    # تنظیم Webhook روی Render
     if 'RENDER' in os.environ or WEBHOOK_URL:
-        # حالت Production روی Render
         logger.info("🚀 راه‌اندازی در حالت Production (Webhook)")
         
-        # تنظیم Webhook
+        # حذف Webhook قبلی و تنظیم جدید
+        bot.remove_webhook()
+        
+        # ساخت آدرس Webhook
         if WEBHOOK_URL:
             webhook_url = f"{WEBHOOK_URL}/webhook"
-            bot.remove_webhook()
+        else:
+            # اگر WEBHOOK_URL تنظیم نشده، از متغیرهای Render استفاده کن
+            import os
+            render_external_url = os.environ.get('RENDER_EXTERNAL_URL')
+            if render_external_url:
+                webhook_url = f"{render_external_url}/webhook"
+            else:
+                webhook_url = None
+        
+        if webhook_url:
             bot.set_webhook(url=webhook_url)
             logger.info(f"✅ Webhook تنظیم شد: {webhook_url}")
+        else:
+            logger.warning("⚠️ آدرس Webhook تنظیم نشده!")
         
         # اجرای Flask
         app.run(host='0.0.0.0', port=port)
     else:
-        # حالت Development
+        # حالت Development (Polling)
         logger.info("🔧 راه‌اندازی در حالت Development (Polling)")
         bot.remove_webhook()
         bot.polling(none_stop=True)
-
-if __name__ == '__main__':
-    main()
